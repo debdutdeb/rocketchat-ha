@@ -2,13 +2,22 @@ config:
   cluster:
     enabled: true
     replicas: 3
+    noAdvertise: false
 
-    merge:
+  merge:
+    cluster:
+      name: nats-ha
       routes:
-        - nats://nats2-0.nats2-headless:6222
-        - nats://nats2-1.nats2-headless:6222
-        - nats://nats2-2.nats2-headless:6222
-        - nats://nats1-0.nats1-headless:6222
-        - nats://nats1-1.nats1-headless:6222
-        - nats://nats1-2.nats1-headless:6222
+        - nats://nats-mesh.nats.svc.cluster.local:6222
+
+    system_account: SYS
+    no_auth_user: anonymous
+    accounts:
+      SYS:
+        users:
+          - user: admin
+            password: adminpassword
+      DEFAULT:
+        users:
+          - user: anonymous
 

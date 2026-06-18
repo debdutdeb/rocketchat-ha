@@ -111,6 +111,10 @@ destroyclusters:
 	@rm -rf certs {kube,cluster{1,2}}.yaml
 
 nats-install:
+	@true; \
+	$(LIST_CLUSTERS) \
+	kubectl apply -f manifests/nats-service.yaml --kubeconfig kube.yaml --context $$cluster1; \
+	kubectl apply -f manifests/nats-service.yaml --kubeconfig kube.yaml --context $$cluster2
 	@id=1; \
 	$(FOR_EACH_CLUSTER) \
 	helm upgrade nats$$id nats --repo https://nats-io.github.io/k8s/helm/charts -n nats --create-namespace \
@@ -119,7 +123,26 @@ nats-install:
 nats-uninstall:
 	@id=1; \
 	$(FOR_EACH_CLUSTER) \
-	helm uninstall nats$$id -n nats --kube-context $$cluster --kubeconfig kube.yaml; id=$$((id+1)); done
+	helm uninstall nats$$id -n nats --kube-context $$cluster --kubeconfig kube.yaml; kubectl delete namespace nats --kubeconfig kube.yaml --context $$cluster; id=$$((id+1)); done
+
+nats-restart:
+	@id=1; \
+	$(FOR_EACH_CLUSTER) \
+	kubectl rollout restart sts nats$$id -n nats --kubeconfig kube.yaml --context $$cluster && kubectl rollout status sts nats$$id -n nats --kubeconfig kube.yaml --context $$cluster; id=$$((id+1)); done
+
+nats-expose-1:
+	@true; \
+	$(LIST_CLUSTERS) \
+	kubectl port-forward --context $$cluster1 --kubeconfig kube.yaml svc/nats1 -n nats 4222:4222
+nats-expose-2:
+	@true; \
+	$(LIST_CLUSTERS) \
+	kubectl port-forward --context $$cluster2 --kubeconfig kube.yaml svc/nats2 -n nats 4222:4222
+
+nats-server-list:
+	@id=1; \
+	$(FOR_EACH_CLUSTER) \
+	kubectl exec deploy/nats$$id-box -n nats --kubeconfig kube.yaml --context $$cluster -- nats server list --user admin --password adminpassword; id=$$((id+1)); done
 
 help:
 	@echo "Usage: make <target>"
@@ -136,4 +159,4 @@ help:
 	@echo "  cilium-enable-hubble: Enable Hubble on clusters"
 	@echo "  help: Show this help message"
 
-.PHONY: config clusters downclusters destroyclusters help cilium-cgroupv2 prepare-clusters install-cilium cilium-enable-mesh cilium-enable-hubble cilium-status cilium-connectivity-test install-cilium clusters-connect-verify nats-install nats-uninstall
+.PHONY: config clusters downclusters destroyclusters help cilium-cgroupv2 prepare-clusters install-cilium cilium-enable-mesh cilium-enable-hubble cilium-status cilium-connectivity-test install-cilium clusters-connect-verify nats-install nats-uninstall nats-expose-1 nats-expose-2 nats-restart nats-server-list
