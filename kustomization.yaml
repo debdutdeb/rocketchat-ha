@@ -3,5 +3,5 @@ kind: Kustomization
 
 resources:
   - clusters/cluster1
-  - clusters/cluster2
+  # - clusters/cluster2
   

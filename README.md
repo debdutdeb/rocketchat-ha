@@ -27,3 +27,5 @@ make cilium-connectivity-test # can take a long time
 #### References:
 1. <https://sandstorm.de/blog/posts/running-cilium-in-k3s-and-k3d-lightweight-kubernetes-on-mac-os-for-development>
 2. <https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default/#k8s-install-quick>
+3. <https://docs.cilium.io/en/stable/installation/kind/#cluster-mesh>
+4. <https://docs.cilium.io/en/stable/installation/k3s/#install-cilium>

@@ -16,7 +16,7 @@ network: registry-proxy-net
 #   - port: 8002:443
 #     nodeFilters:
 #       - loadbalancer
-#       
+#
 
 ## NOTE: Uncomment for linux
 # volumes:
@@ -30,19 +30,17 @@ options:
       - arg: --disable=servicelb
         nodeFilters:
           - server:*
-      #     ^ klipper for cilium mesh apiserver
       - arg: --disable=traefik
         nodeFilters:
           - server:*
-      - arg: --flannel-backend=none 
+      - arg: --flannel-backend=none
         nodeFilters:
           - server:*
       - arg: --disable-network-policy
         nodeFilters:
           - server:*
   k3d:
-    wait: false # no cni initially
-    disableLoadbalancer: true # for klipper for cilium mesh apiserver
+    disableLoadbalancer: true
   kubeconfig:
     updateDefaultKubeconfig: false
 

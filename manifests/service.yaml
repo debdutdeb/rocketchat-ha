@@ -1,0 +1,13 @@
+# global-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  annotations:
+    service.cilium.io/global: "true"
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: web

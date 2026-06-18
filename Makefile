@@ -18,71 +18,101 @@ clusters: config
 	@k3d cluster create -c cluster1.yaml
 	@k3d cluster create -c cluster2.yaml
 	@k3d kubeconfig merge cluster1 cluster2 -o kube.yaml
-	
+
 # for macos
 prepare-clusters:
 	@for container in $(shell docker ps -q --filter "name=k3d-cluster"); do \
 		docker exec $$container mount bpffs -t bpf /sys/fs/bpf; \
-		docker exec $$container mount --make-shared /sys/fs/bpf; \
-		docker exec $$container mkdir -p /run/cilium/cgroupv2; \
-		docker exec $$container mount -t cgroup2 none /run/cilium/cgroupv2; \
-		docker exec $$container mount --make-shared /run/cilium/cgroupv2; done
-	
+		docker exec $$container mount --make-shared /sys/fs/bpf; done
+
 generate-ca:
 	@echo "Generating a shared Root CA for the ClusterMesh..."
 	@mkdir -p certs
 	@openssl req -x509 -newkey rsa:4096 -nodes -keyout certs/ca.key -out certs/ca.crt -days 3650 \
 		-subj "/CN=Cilium-ClusterMesh-Root-CA" 2>/dev/null
-	
+
+# --set clustermesh.apiserver.service.type=NodePort \
+# --set clustermesh.apiserver.service.nodePort=$$nodeport; \
+.PHONY: install-cilium
 install-cilium: $(INSTALL_CILIUM_DEPS)
 	# start from 1 because 0 is reserved, the error said so I don't know what its reserved for
-	@id=1; nodeport=32379; \
-	for cluster in $(shell kubectl --kubeconfig kube.yaml config get-contexts -o name); do \
+	@id=1; cidrs=([1]="10.100.32.0/19" [2]="10.200.32.0/19"); \
+	kubectl --kubeconfig kube.yaml config get-contexts -o name | while read -r cluster; do \
 	  echo "Seeding shared CA and installing Cilium on $$cluster..."; \
-	  cilium install --version 1.19.3 --kubeconfig kube.yaml --context $$cluster \
+	  cilium install --kubeconfig kube.yaml --context $$cluster \
 	  	--set cluster.id=$$id --set cluster.name=$$(echo $$cluster | sed 's/k3d-//') \
-	  	--set tls.ca.cert="$$(cat certs/ca.crt | base64 | tr -d '\n')" \
-	  	--set tls.ca.key="$$(cat certs/ca.key | base64 | tr -d '\n')" \
-		--set clustermesh.apiserver.service.type=NodePort \
-		--set clustermesh.apiserver.service.nodePort=$$nodeport \
-	  	--set tls.enabled=true; \
-	  id=$$((id+1)); nodeport=$$((nodeport+1)); done
-	
+		--set ipam.operator.clusterPoolIPv4PodCIDRList=$${cidrs[$$id]} \
+		--set kubeProxyReplacement=true \
+		--set ipam.mode=kubernetes \
+		--set tls.ca.cert="$$(cat certs/ca.crt | base64 | tr -d '\n')" \
+		--set tls.ca.key="$$(cat certs/ca.key | base64 | tr -d '\n')" \
+		--set cgroup.autoMount.enabled=false \
+		--set cgroup.hostRoot=/sys/fs/cgroup \
+		--set tls.enabled=true; \
+	  id=$$((id+1)); done
+
 cilium-enable-hubble:
-	@for cluster in $(shell kubectl --kubeconfig kube.yaml config get-contexts -o name); do \
+	@kubectl --kubeconfig kube.yaml config get-contexts -o name| while read -r cluster; do \
 		cilium hubble enable --kubeconfig kube.yaml --context $$cluster; done
-	
+
 cilium-status:
-	@for cluster in $(shell kubectl --kubeconfig kube.yaml config get-contexts -o name); do \
+	@kubectl --kubeconfig kube.yaml config get-contexts -o name| while read -r cluster; do \
 		cilium status --kubeconfig kube.yaml --context $$cluster --wait; done
-	
+
 cilium-mesh-status:
-	@for cluster in $(shell kubectl --kubeconfig kube.yaml config get-contexts -o name); do \
+	@kubectl --kubeconfig kube.yaml config get-contexts -o name | while read -r cluster; do \
 		cilium clustermesh status --kubeconfig kube.yaml --context $$cluster --wait; done
-	
+
 cilium-connectivity-test:
-	@for cluster in $(shell kubectl --kubeconfig kube.yaml config get-contexts -o name); do \
+	@kubectl --kubeconfig kube.yaml config get-contexts -o name | while read -r cluster; do \
 		cilium connectivity test --kubeconfig kube.yaml --context $$cluster; done
-	
+
 cilium-enable-mesh:
-	@for cluster in $(shell kubectl --kubeconfig kube.yaml config get-contexts -o name); do \
+	@kubectl --kubeconfig kube.yaml config get-contexts -o name | while read -r cluster; do \
 		cilium clustermesh enable --kubeconfig kube.yaml --context $$cluster --service-type NodePort; done
-	
-clusters-connect: install-cilium cilium-status cilium-enable-mesh cilium-mesh-status clusters-connect-only
+
+clusters-connect: install-cilium cilium-status cilium-enable-mesh cilium-mesh-status clusters-connect-only cilium-mesh-status clusters-connect-verify
 
 clusters-connect-only:
 	@clusters=($(shell kubectl --kubeconfig kube.yaml config get-contexts -o name)); \
 		echo "Connecting $${clusters[0]} to $${clusters[1]}"; \
-		cilium clustermesh connect $${clusters[0]} $${clusters[1]} --kubeconfig kube.yaml
+		cilium clustermesh connect \
+			--context "$${clusters[0]}" \
+			--destination-context "$${clusters[1]}" \
+			--kubeconfig kube.yaml
+
+clusters-connect-verify:
+	@clusters=($(shell kubectl --kubeconfig kube.yaml config get-contexts -o name)); \
+		kubectl apply -f manifests/web.yaml --context $${clusters[0]}; \
+		kubectl apply -f manifests/service.yaml --context $${clusters[0]}; \
+		kubectl apply -f manifests/service.yaml --context $${clusters[1]}; \
+		kubectl --kubeconfig kube.yaml --context $${clusters[0]} \
+			rollout status deployment/web --timeout=60s; \
+		kubectl --kubeconfig kube.yaml --context $${clusters[1]} \
+			run mesh-client -it --rm \
+			--image=curlimages/curl --restart=Never -- \
+			curl -vvv http://web && \
+				echo "[SUCCESS] $${clusters[1]} reached nginx running on $${clusters[0]}" || \
+				echo "[ERROR] $${clusters[1]} failed to reach nginx running on $${clusters[0]}"; \
+		kubectl delete -f manifests/web.yaml --context $${clusters[0]}; \
+		kubectl delete -f manifests/service.yaml --context $${clusters[0]}; \
+		kubectl delete -f manifests/service.yaml --context $${clusters[1]}; \
 
 downclusters:
 	@k3d cluster stop -c cluster1.yaml
 	@k3d cluster stop -c cluster2.yaml
-	
+
 destroyclusters:
 	@k3d cluster delete -c cluster1.yaml
 	@k3d cluster delete -c cluster2.yaml
 	@rm -rf certs {kube,cluster{1,2}}.yaml
+
+nats-install:
+	@helm upgrade nats nats --repo https://nats-io.github.io/k8s/helm/charts -n nats --create-namespace \
+		-f values/nats.yaml --install
+
+nats-uninstall:
+	@helm uninstall nats nats -n nats
 
 help:
 	@echo "Usage: make <target>"
@@ -99,4 +129,4 @@ help:
 	@echo "  cilium-enable-hubble: Enable Hubble on clusters"
 	@echo "  help: Show this help message"
 
-.PHONY: config clusters downclusters destroyclusters help cilium-cgroupv2 prepare-clusters install-cilium cilium-enable-mesh cilium-enable-hubble cilium-status cilium-connectivity-test
+.PHONY: config clusters downclusters destroyclusters help cilium-cgroupv2 prepare-clusters install-cilium cilium-enable-mesh cilium-enable-hubble cilium-status cilium-connectivity-test install-cilium clusters-connect-verify
