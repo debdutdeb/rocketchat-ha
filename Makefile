@@ -5,6 +5,9 @@ ifeq ($(UNAME_S),Darwin)
 INSTALL_CILIUM_DEPS := prepare-clusters generate-ca
 endif
 
+LIST_CLUSTERS := clusters=($(shell kubectl --kubeconfig kube.yaml config get-contexts -o name)); cluster1=$${clusters[0]}; cluster2=$${clusters[1]};
+FOR_EACH_CLUSTER := kubectl --kubeconfig kube.yaml config get-contexts -o name | while read -r cluster; do
+
 cilium-cgroupv2:
 	@mkdir -p /run/cilium/cgroupv2
 	@mount -t cgroup2 none /run/cilium/cgroupv2
@@ -108,11 +111,15 @@ destroyclusters:
 	@rm -rf certs {kube,cluster{1,2}}.yaml
 
 nats-install:
-	@helm upgrade nats nats --repo https://nats-io.github.io/k8s/helm/charts -n nats --create-namespace \
-		-f values/nats.yaml --install
+	@id=1; \
+	$(FOR_EACH_CLUSTER) \
+	helm upgrade nats$$id nats --repo https://nats-io.github.io/k8s/helm/charts -n nats --create-namespace \
+		-f values/nats.yaml --install --kube-context $$cluster --kubeconfig kube.yaml; id=$$((id+1)); done
 
 nats-uninstall:
-	@helm uninstall nats nats -n nats
+	@id=1; \
+	$(FOR_EACH_CLUSTER) \
+	helm uninstall nats$$id -n nats --kube-context $$cluster --kubeconfig kube.yaml; id=$$((id+1)); done
 
 help:
 	@echo "Usage: make <target>"
@@ -129,4 +136,4 @@ help:
 	@echo "  cilium-enable-hubble: Enable Hubble on clusters"
 	@echo "  help: Show this help message"
 
-.PHONY: config clusters downclusters destroyclusters help cilium-cgroupv2 prepare-clusters install-cilium cilium-enable-mesh cilium-enable-hubble cilium-status cilium-connectivity-test install-cilium clusters-connect-verify
+.PHONY: config clusters downclusters destroyclusters help cilium-cgroupv2 prepare-clusters install-cilium cilium-enable-mesh cilium-enable-hubble cilium-status cilium-connectivity-test install-cilium clusters-connect-verify nats-install nats-uninstall
