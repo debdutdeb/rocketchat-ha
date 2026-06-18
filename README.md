@@ -8,6 +8,8 @@ This guide uses `k3d` or `k3s` to be specific to spin up the clusters.
 
 Make sure `direnv` is installed <https://direnv.net/>. 
 
+Also set up [k3d with image caching](https://github.com/RocketChat/k3d-with-registry) for quick turnarounds across iterations.
+
 ```sh
 direnv allow . # installs cilium cli to _bin and adds to PATH
 make clusters{,-connect} # create two clusters, look at cluster1.yaml and cluster2.yaml for the respective configurations, then connects both through cilium mesh

@@ -85,21 +85,25 @@ clusters-connect-only:
 			--kubeconfig kube.yaml
 
 clusters-connect-verify:
-	@clusters=($(shell kubectl --kubeconfig kube.yaml config get-contexts -o name)); \
-		kubectl apply -f manifests/web.yaml --context $${clusters[0]}; \
-		kubectl apply -f manifests/service.yaml --context $${clusters[0]}; \
-		kubectl apply -f manifests/service.yaml --context $${clusters[1]}; \
-		kubectl --kubeconfig kube.yaml --context $${clusters[0]} \
-			rollout status deployment/web --timeout=60s; \
-		kubectl --kubeconfig kube.yaml --context $${clusters[1]} \
+	@true; \
+	$(LIST_CLUSTERS) \
+		kubectl apply -f manifests/web.yaml --context $$cluster1; \
+		kubectl apply -f manifests/service.yaml --context $$cluster1; \
+		kubectl apply -f manifests/service.yaml --context $$cluster2; \
+		kubectl --kubeconfig kube.yaml --context $$cluster1 rollout status deployment/web --timeout=60s; \
+		count=0; \
+		while ! kubectl --kubeconfig kube.yaml --context $$cluster2 \
 			run mesh-client -it --rm \
 			--image=curlimages/curl --restart=Never -- \
-			curl -vvv http://web && \
-				echo "[SUCCESS] $${clusters[1]} reached nginx running on $${clusters[0]}" || \
-				echo "[ERROR] $${clusters[1]} failed to reach nginx running on $${clusters[0]}"; \
-		kubectl delete -f manifests/web.yaml --context $${clusters[0]}; \
-		kubectl delete -f manifests/service.yaml --context $${clusters[0]}; \
-		kubectl delete -f manifests/service.yaml --context $${clusters[1]}; \
+			curl -vvv http://web; do \
+				echo "[ERROR][$$count] $$cluster2 failed to reach nginx running on $$cluster1"; \
+				count=$$((count+1)); \
+				if ((count==10)); then echo "[ERROR] exhausted max retry attempts (5)"; else sleep 5s; continue; fi; \
+				exit 1; done; \
+		echo "[SUCCESS] $$cluster2 reached nginx running on $$cluster1"; \
+		kubectl delete -f manifests/web.yaml --context $$cluster1; \
+		kubectl delete -f manifests/service.yaml --context $$cluster1; \
+		kubectl delete -f manifests/service.yaml --context $$cluster2
 
 downclusters:
 	@k3d cluster stop -c cluster1.yaml
