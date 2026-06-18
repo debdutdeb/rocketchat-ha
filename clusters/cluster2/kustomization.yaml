@@ -9,6 +9,12 @@ patches:
       kind: Simple
       name: cluster
     patch: |-
+      - op: replace
+        path: /ports/0/port
+        value: 8003:80
+      - op: replace
+        path: /ports/1/port
+        value: 8004:443
       - op: add
         path: /metadata/name
         value: cluster2

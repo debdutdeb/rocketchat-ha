@@ -6,16 +6,16 @@ metadata:
 
 image: rancher/k3s:v1.27.4-k3s1
 servers: 1
-agents: 1
+agents: 2
 network: registry-proxy-net
 
-# ports:
-#   - port: 8001:80
-#     nodeFilters:
-#       - loadbalancer
-#   - port: 8002:443
-#     nodeFilters:
-#       - loadbalancer
+ports:
+  - port: 8001:80
+    nodeFilters:
+      - loadbalancer
+  - port: 8002:443
+    nodeFilters:
+      - loadbalancer
 #
 
 ## NOTE: Uncomment for linux
@@ -30,16 +30,21 @@ options:
       - arg: --disable=servicelb
         nodeFilters:
           - server:*
-      - arg: --disable=traefik
-        nodeFilters:
-          - server:*
+      # - arg: --disable=traefik
+      #   nodeFilters:
+      #     - server:*
       - arg: --flannel-backend=none
         nodeFilters:
           - server:*
       - arg: --disable-network-policy
         nodeFilters:
           - server:*
-  k3d:
-    disableLoadbalancer: true
+  k3d: {}
+    #disableLoadbalancer: true
   kubeconfig:
     updateDefaultKubeconfig: false
+
+volumes:
+  - volume: ${PWD}/cluster/traefik-config.yaml:/var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+    nodeFilters:
+      - server:0
