@@ -4,3 +4,4 @@ _bin/
 cluster1.yaml
 cluster2.yaml
 kube.yaml
+.common_envrc

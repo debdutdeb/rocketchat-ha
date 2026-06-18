@@ -1,0 +1,16 @@
+nats:
+  enabled: false
+  existingSecret:
+    name: nats-conn
+    key: connectionString
+microservices:
+  enabled: true
+
+ingress:
+  enabled: true
+
+existingMongodbSecret: mongodb-conn
+
+host: rocketchat.internal
+mongodb: {enabled: false}
+persistence: {enabled: false }

@@ -5,7 +5,7 @@ ifeq ($(UNAME_S),Darwin)
 INSTALL_CILIUM_DEPS := prepare-clusters generate-ca
 endif
 
-LIST_CLUSTERS := clusters=($(shell kubectl --kubeconfig kube.yaml config get-contexts -o name)); cluster1=$${clusters[0]}; cluster2=$${clusters[1]};
+LIST_CLUSTERS := clusters=($$(kubectl --kubeconfig kube.yaml config get-contexts -o name)); cluster1=$${clusters[0]}; cluster2=$${clusters[1]};
 FOR_EACH_CLUSTER := kubectl --kubeconfig kube.yaml config get-contexts -o name | while read -r cluster; do
 
 cilium-cgroupv2:
@@ -148,6 +148,20 @@ nats-server-list:
 	$(FOR_EACH_CLUSTER) \
 	kubectl exec deploy/nats$$id-box -n nats --kubeconfig kube.yaml --context $$cluster -- nats server list --user admin --password adminpassword; id=$$((id+1)); done
 
+rocketchat-install:
+	@:; \
+	if [[ -z "$$MONGODB_URL" ]]; then echo "[ERROR] MONGODB_URL environment variable needs to be set"; exit 1; fi; \
+	$(FOR_EACH_CLUSTER) \
+	envsubst < manifests/mongodb-conn-secret.yaml | kubectl --kubeconfig kube.yaml --context $$cluster apply -f -; \
+	kubectl --kubeconfig kube.yaml --context $$cluster apply -f manifests/nats-conn-secret.yaml; \
+	helm upgrade --install --repo https://rocketchat.github.io/helm-charts rocketchat rocketchat -f values/rocketchat.yaml --namespace rocketchat --create-namespace --kubeconfig kube.yaml --kube-context $$cluster; done
+
+rocketchat-uninstall:
+	@:; \
+	$(FOR_EACH_CLUSTER) \
+	helm uninstall rocketchat --namespace rocketchat --kubeconfig kube.yaml --kube-context $$cluster; \
+	kubectl --kubeconfig kube.yaml --context $$cluster delete namespace rocketchat || :; done
+
 help:
 	@echo "Usage: make <target>"
 	@echo "Targets:"
@@ -163,4 +177,4 @@ help:
 	@echo "  cilium-enable-hubble: Enable Hubble on clusters"
 	@echo "  help: Show this help message"
 
-.PHONY: config clusters downclusters destroyclusters help cilium-cgroupv2 prepare-clusters install-cilium cilium-enable-mesh cilium-enable-hubble cilium-status cilium-connectivity-test install-cilium clusters-connect-verify nats-install nats-uninstall nats-expose-1 nats-expose-2 nats-restart nats-server-list
+.PHONY: config clusters downclusters destroyclusters help cilium-cgroupv2 prepare-clusters install-cilium cilium-enable-mesh cilium-enable-hubble cilium-status cilium-connectivity-test install-cilium clusters-connect-verify nats-install nats-uninstall nats-expose-1 nats-expose-2 nats-restart nats-server-list rocketchat-install
