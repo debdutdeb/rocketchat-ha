@@ -26,6 +26,11 @@ locals {
   cluster2_public_subnets  = [for k, v in [0, 2] : cidrsubnet(local.cluster2_cidr, 8, k + 48)]
 }
 
+variable "aws_profile" {
+  sensitive = true
+  type      = string
+}
+
 module "cluster1" {
   providers = {
     aws = aws.region1
@@ -60,13 +65,15 @@ module "cluster2" {
 }
 
 provider "aws" {
-  region = local.cluster1_region
-  alias  = "region1"
+  region  = local.cluster1_region
+  alias   = "region1"
+  profile = var.aws_profile
 }
 
 provider "aws" {
-  region = local.cluster2_region
-  alias  = "region2"
+  region  = local.cluster2_region
+  alias   = "region2"
+  profile = var.aws_profile
 }
 
 // https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_peering_connection_options#cross-account-usage
@@ -114,4 +121,50 @@ resource "aws_vpc_peering_connection_options" "this" {
   requester {
     allow_remote_vpc_dns_resolution = true
   }
+}
+
+resource "aws_route" "cluster1_to_cluster2" {
+  provider = aws.region1
+
+  count                     = length(module.cluster1.private_route_table_ids)
+  route_table_id            = module.cluster1.private_route_table_ids[count.index]
+  destination_cidr_block    = local.cluster2_cidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.this.id
+
+  depends_on = [aws_vpc_peering_connection_accepter.this]
+}
+
+resource "aws_route" "cluster2_to_cluster1" {
+  provider = aws.region2
+
+  count                     = length(module.cluster2.private_route_table_ids)
+  route_table_id            = module.cluster2.private_route_table_ids[count.index]
+  destination_cidr_block    = local.cluster1_cidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.this.id
+
+  depends_on = [aws_vpc_peering_connection_accepter.this]
+}
+
+resource "local_sensitive_file" "kubeconfig" {
+  filename = "${path.cwd}/kube.yaml"
+  content = <<EOF
+  ---
+${
+  templatefile("${path.cwd}/kube.yaml.tftpl", {
+    cluster_endpoint = module.cluster1.cluster.endpoint, cluster_ca_data = aws_eks_cluster.this.certificate_authority.0.data,
+    aws_profile      = var.aws_profile,
+    region           = local.cluster1_region,
+    cluster_name     = module.cluster1.cluster.name
+  })
+  }
+---
+${
+  templatefile("${path.cwd}/kube.yaml.tftpl", {
+    cluster_endpoint = module.cluster2.cluster.endpoint, cluster_ca_data = aws_eks_cluster.this.certificate_authority.0.data,
+    aws_profile      = var.aws_profile,
+    region           = local.cluster2_region,
+    cluster_name     = module.cluster2.cluster.name
+  })
+}
+  EOF
 }
