@@ -131,8 +131,14 @@ Add a host entry to your `/etc/hosts` file to resolve `rocketchat.internal` to `
 
 A Loadbalancer will point to both clusters' entrypoints and balance traffic between them. If one region falls, or one cluster falls, the Loadbalancer will automatically route traffic to the other cluster.
 
+### Notes
+Set `export TF_CLI_ARGS_init="-backend-config='bucket={}' -backend-config='key={}' -backend-config='region={}'"`  
+Set `export AWS_PROFILE={}`  
+
 #### References:
 1. <https://sandstorm.de/blog/posts/running-cilium-in-k3s-and-k3d-lightweight-kubernetes-on-mac-os-for-development>
 2. <https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default/#k8s-install-quick>
 3. <https://docs.cilium.io/en/stable/installation/kind/#cluster-mesh>
 4. <https://docs.cilium.io/en/stable/installation/k3s/#install-cilium>
+
+

@@ -162,6 +162,9 @@ rocketchat-uninstall:
 	helm uninstall rocketchat --namespace rocketchat --kubeconfig kube.yaml --kube-context $$cluster; \
 	kubectl --kubeconfig kube.yaml --context $$cluster delete namespace rocketchat || :; done
 
+eks-clusters:
+	cd ./eks/tofu/infrastructure/ && tofu init --upgrade && tofu apply
+
 help:
 	@echo "Usage: make <target>"
 	@echo "Targets:"
