@@ -6,6 +6,10 @@ terraform {
     aws = {
       version = ">=6.0"
     }
+    local = {
+      source  = "hashicorp/local"
+      version = ">=2.0"
+    }
   }
 }
 
@@ -24,6 +28,12 @@ locals {
 
   cluster2_private_subnets = [for k, v in [0, 2] : cidrsubnet(local.cluster2_cidr, 4, k)]
   cluster2_public_subnets  = [for k, v in [0, 2] : cidrsubnet(local.cluster2_cidr, 8, k + 48)]
+
+  sizing = {
+    desired = 0
+    maximum = 5
+    minimum = 0
+  }
 }
 
 variable "aws_profile" {
@@ -34,6 +44,11 @@ variable "aws_profile" {
 module "cluster1" {
   providers = {
     aws = aws.region1
+  }
+  sizing = {
+    maximum = local.sizing.maximum
+    desired = local.sizing.desired
+    minimum = local.sizing.minimum
   }
 
   source = "../modules/cluster"
@@ -54,6 +69,12 @@ module "cluster2" {
   }
   source = "../modules/cluster"
 
+  sizing = {
+    maximum = local.sizing.maximum
+    desired = local.sizing.desired
+    minimum = local.sizing.minimum
+  }
+
   eks_version         = local.eks_version
   vpc_cidr            = local.cluster2_cidr
   vpc_private_subnets = local.cluster2_private_subnets
@@ -68,12 +89,18 @@ provider "aws" {
   region  = local.cluster1_region
   alias   = "region1"
   profile = var.aws_profile
+  ignore_tags {
+    keys = ["CreatedBy"]
+  }
 }
 
 provider "aws" {
   region  = local.cluster2_region
   alias   = "region2"
   profile = var.aws_profile
+  ignore_tags {
+    keys = ["CreatedBy"]
+  }
 }
 
 // https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_peering_connection_options#cross-account-usage
@@ -147,24 +174,51 @@ resource "aws_route" "cluster2_to_cluster1" {
 
 resource "local_sensitive_file" "kubeconfig" {
   filename = "${path.cwd}/kube.yaml"
-  content = <<EOF
-  ---
-${
-  templatefile("${path.cwd}/kube.yaml.tftpl", {
-    cluster_endpoint = module.cluster1.cluster.endpoint, cluster_ca_data = aws_eks_cluster.this.certificate_authority.0.data,
-    aws_profile      = var.aws_profile,
-    region           = local.cluster1_region,
-    cluster_name     = module.cluster1.cluster.name
-  })
-  }
----
-${
-  templatefile("${path.cwd}/kube.yaml.tftpl", {
-    cluster_endpoint = module.cluster2.cluster.endpoint, cluster_ca_data = aws_eks_cluster.this.certificate_authority.0.data,
-    aws_profile      = var.aws_profile,
-    region           = local.cluster2_region,
-    cluster_name     = module.cluster2.cluster.name
+  content = templatefile("${path.cwd}/kube.yaml.tftpl", {
+    current_context = module.cluster1.cluster.cluster_name
+    clusters = [
+      {
+        name        = module.cluster1.cluster.cluster_name
+        endpoint    = module.cluster1.cluster.cluster_endpoint
+        ca_data     = module.cluster1.cluster.cluster_certificate_authority_data
+        aws_profile = var.aws_profile
+        region      = local.cluster1_region
+      },
+      {
+        name        = module.cluster2.cluster.cluster_name
+        endpoint    = module.cluster2.cluster.cluster_endpoint
+        ca_data     = module.cluster2.cluster.cluster_certificate_authority_data
+        aws_profile = var.aws_profile
+        region      = local.cluster2_region
+      },
+    ]
   })
 }
-  EOF
+
+variable "create_coredns" {
+  description = "before colium, problem. without cilium, nodes are unhealthy, tofu gets stuck, with no nodes, tofu ok but coredns blocks. turn on later"
+  type        = bool
+  default     = false
+}
+
+resource "aws_eks_addon" "coredns1" {
+  provider     = aws.region1
+  count        = var.create_coredns ? 1 : 0
+  cluster_name = module.cluster1.cluster.cluster_name
+  addon_name   = "coredns"
+
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  tags = module.cluster1.common_tags
+}
+
+resource "aws_eks_addon" "coredns2" {
+  provider     = aws.region2
+  count        = var.create_coredns ? 1 : 0
+  cluster_name = module.cluster2.cluster.cluster_name
+  addon_name   = "coredns"
+
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  tags = module.cluster2.common_tags
 }

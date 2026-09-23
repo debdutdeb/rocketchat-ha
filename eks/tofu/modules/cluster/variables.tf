@@ -31,3 +31,11 @@ variable "eks_version" {
 variable "aws_region" {
   type = string
 }
+
+variable "sizing" {
+  type = object({
+      minimum = number
+      maximum = number
+      desired = number
+  })
+}

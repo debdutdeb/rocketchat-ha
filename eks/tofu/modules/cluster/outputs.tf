@@ -9,3 +9,7 @@ output "private_route_table_ids" {
 output "cluster" {
   value = module.eks
 }
+
+output "common_tags" {
+  value = local.tags
+}

@@ -200,9 +200,9 @@ module "eks" {
 
       ami_type = "AL2023_ARM_64_STANDARD"
 
-      min_size     = 1
-      max_size     = 5
-      desired_size = 2
+      min_size     = var.sizing.minimum
+      max_size     = var.sizing.maximum
+      desired_size = var.sizing.desired
 
       taints = {
         agent-not-ready = {
@@ -214,5 +214,18 @@ module "eks" {
     }
   }
 
+
+  // handle addons in caller
+  addons = {}
+  # addons = {
+  #   // add this separately
+  #   coredns    = {
+  #     timeout = "1m00s" // this will fail
+  #   }
+  #   kube-proxy = {}
+  #   vpc-cni = {
+  #     before_compute = true
+  #   }
+  # }
   tags = local.tags
 }
